@@ -4,24 +4,13 @@ Provides shared functions that do not fit in a class of their own
 """
 import os
 import re
-import logging
-import coloredlogs
+import inspect
+import types
+import sys
 import beaker
+import logging
 
-# Logging
-coloredlogs.install(level=os.getenv('AUGUR_LOG_LEVEL', 'INFO'))
-logger = logging.getLogger('augur')
-
-# end imports
-# (don't remove the above line, it's for a script)
-
-def getFileID(path):
-    """
-    Returns file ID of given object
-
-    :param path: path of given object
-    """
-    return os.path.splitext(os.path.basename(path))[0]
+logger = logging.getLogger(__name__)
 
 __ROOT = os.path.abspath(os.path.dirname(__file__))
 def get_data_path(path):
@@ -52,22 +41,33 @@ def get_cache(namespace, cache_manager=None):
     return cache_manager.get_cache(namespace)
 
 metric_metadata = []
-def annotate(metadata=None, **kwargs):
+def register_metric(metadata=None, **kwargs):
     """
-    Decorates a function as being a metric
+    Register a function as being a metric
     """
     if metadata is None:
         metadata = {}
-    def decorate(func):
-        if not hasattr(func, 'metadata'):
-            func.metadata = {}
-            metric_metadata.append(func.metadata)
-        func.metadata.update(metadata)
-        func.metadata.update(dict(kwargs))
+    def decorate(function):
+        if not hasattr(function, 'metadata'):
+            function.metadata = {}
+            metric_metadata.append(function.metadata)
 
-        func.metadata['metric_name'] = re.sub('_', ' ', func.__name__).title()
-        func.metadata['source'] = re.sub(r'(.*\.)', '', func.__module__)
-        func.metadata['ID'] = "{}-{}".format(func.metadata['source'].lower(), func.metadata['tag'])
+        if not hasattr(function, 'is_metric'):
+            function.is_metric = True
 
-        return func
+        function.metadata.update(dict(kwargs))
+
+        function.metadata['tag'] = re.sub('_', '-', function.__name__).lower()
+        function.metadata['endpoint'] = function.metadata['tag']
+        function.metadata['name'] = re.sub('_', ' ', function.__name__).title()
+        function.metadata['model'] = re.sub(r'(.*\.)', '', function.__module__)
+
+        if kwargs.get('type', None):
+            function.metadata['type'] = kwargs.get('type')
+        else:
+            function.metadata['type'] = "standard"
+
+        function.metadata.update(metadata)
+
+        return function
     return decorate
